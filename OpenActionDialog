@@ -1,0 +1,827 @@
+import $                        from'jquery';
+import {ProjectStructure}       from'../project/ProjectStructure';
+import {ApplicationSettings}    from'../application/ApplicationSettings';
+import {CommandManager}         from '../command/CommandManager';
+import Template                 from'./template/createaction/cmplist.tpl';
+import {TemplateUtils}          from '../utils/TemplateUtils';
+import * as Commands            from '../command/Commands';
+
+let $dialog = $('#dialog-action');
+
+let $cover = $('#dialog-cover');
+
+let $close = $dialog.find('.dialog-close');
+
+let $cancel = $('#dialog-new-action-cancel');
+
+let $cmpList = $('#cmpList');
+
+let $prev = $('#dialog-new-action-prev');
+
+let $next = $('#dialog-new-action-next');
+
+let $step = $('.step');
+
+let isInitialized = false;
+
+let $check = $('#actionCheck');
+
+let checkValue = true;
+
+let $fromInput = $('.step-transform.from input');
+
+let status = null;
+
+let $easingBtnLeft = $('#easingBtnLeft');
+
+let $easingBtnRight = $('#easingBtnRight');
+
+let $easingGroup = $('.easing-imgs-groups');
+
+let easingPage = 0;
+
+let $easingImage = $('.easing-img');
+
+let cmpSelected = "false";
+
+let updateAction = null;
+
+export class OpenActionDialog {
+
+    /**
+     * Initialize the dialog.
+     */
+    static init(params) {
+
+        status = params;
+        clear();
+        if (status == 'dialog-new-action') {
+            initCreateDialog();
+        }
+        else if (status == 'dialog-update-action') {
+            initUpdateDialog();
+        }
+
+        if (!isInitialized) {
+            bindEvents();
+            isInitialized = true;
+        }
+    }
+
+    /**
+     * Show the dialog.
+     */
+    static show() {
+        $dialog.addClass('visible');
+        $cover.addClass('visible');
+    }
+
+    /**
+     *Close the dialog
+     */
+    static close() {
+        $dialog.removeClass('visible');
+        $cover.removeClass('visible');
+    }
+
+}
+
+/**
+ * 清除之前对话框中的选中效果和输入框的值
+ */
+function clear() {
+    cmpSelected = null;
+    $cmpList.children().remove();
+
+    //from属性输入框只读
+    $fromInput.attr('readonly', 'true');
+
+    //将按钮文字设置为下一步
+    $next.html('下一步');
+
+    //提醒文字隐
+    $('.notice').removeClass('show');
+    //
+    $('#dialog-action input').val('');
+
+    $fromInput.attr('readonly', 'true');
+    $fromInput.addClass('readonly');
+    $check[0].checked = false;
+
+    //清除步骤效果
+    $('.step.step-now').removeClass('step-now');
+    let $stepOrder = $('.step-order');
+    for (let i = 1; i <= $stepOrder.length; i++) {
+        $stepOrder[i - 1].innerHTML = i;
+    }
+    $('.fa.fa-check.step-order-ok').attr('class', 'step-order');
+}
+
+/**
+ * bind dialog events
+ */
+function bindEvents() {
+
+    $close.click(OpenActionDialog.close);
+    $cancel.click(OpenActionDialog.close);
+
+    $next.click(toNext);
+    $prev.click(toPrev);
+
+    $check.click(readOnly);
+    $easingImage.click(selectEasingList);
+    $easingBtnLeft.click(easingMoveLeft);
+    $easingBtnRight.click(easingMoveRight);
+
+    $cmpList.on('click', '.cmp-name', selectTarget);
+    $cmpList.on('click', '.group-logo', groupToggle);
+}
+
+/**
+ * 对话框显示第几页
+ *
+ * @param index 页码 0-2
+ */
+function showPage(index) {
+    $step.eq(index).addClass('step-now');
+}
+
+/**
+ * 初始化输入模式新建action对话框
+ */
+function initCreateDialog() {
+    createDialogClear();
+    initCmpList();
+    showPage(0);
+}
+
+/**
+ * 将对话框所有样式还原，清除输入框的值
+ */
+function createDialogClear() {
+    $('.action-cmp-label').html('添加动作的组件 : 请务必选择组件，才可继续进行操作。');
+    //初始化摁建颜色
+    $next.addClass('refuse');
+    $prev.addClass('refuse');
+    // 有组件选中时
+    checkValue = true;
+    //创建新action状态下，设置easing默认值，还原easing列表位置
+    initEasingList(0, $('.easing-imgs-group.Sinusoidal .easing-img').eq(2));
+    easingPage = 0;
+}
+
+/**
+ * 初始化对话框组件列表
+ */
+function initCmpList() {
+    let scene = ProjectStructure.getScene();
+    createCmpList(scene, $cmpList, 0);
+    if (cmpSelected) {
+        function removeHidden(cmpSelected) {
+            let cmpParent = cmpSelected.parent();
+            let cmpChild  = cmpParent.children('.cmp-name');
+            cmpParent.children('.hidden').removeClass('hidden');
+            cmpChild.children('.fa-caret-right').addClass('fa-caret-down');
+            cmpChild.children('.fa-caret-right').removeClass('fa-caret-right');
+            cmpChild.children('.cmpType').addClass('fa-folder-open');
+            cmpChild.children('.cmpType').removeClass('fa-folder');
+            if (cmpParent.attr('class') === 'cmp hidden') {
+                removeHidden(cmpParent);
+            }
+        }
+
+        removeHidden(cmpSelected);
+    }
+}
+
+/**
+ *
+ * @param scene 场景组件数据
+ * @param dom   根节点
+ * @param level 列表层级关系
+ */
+function createCmpList(scene, dom, level) {
+    scene.children.forEach(function (component) {
+        if (component.class !== "PerspectiveCamera") {
+            let $div      = $(template(component));
+            let $typeIcon = $div.find('.cmpType');
+            addCmpTypeIcon($typeIcon, component);
+            if (level > 0) {
+                $div.addClass('hidden');
+            }
+            let $groupLogo = $div.find('.group-logo');
+            $groupLogo.css('margin-left', level * 25 + 'px');
+            let id = $div.find('.cmp-name').attr('data-id');
+
+            if (ApplicationSettings.getSelectedObjects() == id) {
+                $div.find('.cmp-name').addClass('cmp-active');
+                initPageData(component.uuid);
+                cmpSelected = $div;
+                let cmpName = component.name ? component.name : component.uuid;
+                $('.action-cmp-label').html('添加动作的组件 : ' + cmpName);
+            }
+
+            if (component.children && component.children.length > 0) {
+                $groupLogo.addClass('fa-caret-right');
+                $groupLogo.removeClass('un-visible');
+                createCmpList(component, $div, level + 1);
+            }
+            dom.append($div);
+        }
+    });
+}
+
+function addCmpTypeIcon($typeIcon, cmp) {
+    switch (cmp.class) {
+        case 'Object':
+            $typeIcon.addClass('fa-folder');
+            break;
+        case 'Mesh':
+            let geometry = ProjectStructure.getGeometry(cmp.geometry);
+            switch (geometry.class) {
+                case 'BoxBufferGeometry':
+                    $typeIcon.addClass('fa-cube');
+                    break;
+                case 'PlaneBufferGeometry':
+                    $typeIcon.addClass('fa-square');
+                    break;
+                default :
+                    let msg = '[CmpLIstPanel][addCmpTypeIcon] The Mesh component type is undefined.';
+                    throw new Error(msg);
+            }
+            break;
+        case 'Topic':
+            break;
+        default:
+            let msg = '[CmpLIstPanel][addCmpTypeIcon] The component type is undefined.';
+            throw new Error(msg);
+    }
+}
+
+/**
+ * 修改action初始化
+ */
+function initUpdateDialog() {
+    let component = null;
+    let name = '';
+    updateAction  = ProjectStructure.getAction(ApplicationSettings.getSelectedCommand(),
+        ApplicationSettings.getSelectedAction());
+
+    if (updateAction.target == 'camera') {
+        component = ProjectStructure.getCamera();
+        component.name = 'camera';
+        component.uuid = 'camera';
+        name  = 'camera';
+    } else {
+        component = ProjectStructure.getObject(updateAction.target);
+        name  = component.name;
+    }
+
+    updateDialogClear();
+    $('.action-cmp-label').html('添加动作的组件 : ' + name);
+    updateCmplist($cmpList, component);
+    showPage(1);
+}
+
+/**
+ * 修改action初始化dialog样式
+ */
+function updateDialogClear() {
+    //初始化摁建颜色
+    $next.removeClass('refuse');
+    $prev.removeClass('refuse');
+
+    // 第一页页签效果
+    $('.step-order').eq(0).addClass("fa fa-check step-order-ok");
+    $('.step-order').eq(0).html('');
+
+    $('.easing-img').each(function () {
+        if ($(this).attr('alt') === updateAction.easing) {
+            let page = $(this).parent().index();
+            initEasingList(page, $(this));
+        }
+    });
+}
+
+/**
+ *
+ *
+ * @param dom 根节点
+ * @param actionCmp 修改action的组件.
+ */
+function updateCmplist(dom, actionCmp) {
+    let $div = $(template(actionCmp));
+    $div.find('.cmp-name').addClass('cmp-active');
+    dom.append($div);
+    initPageData(actionCmp.uuid);
+}
+
+
+/**
+ * 组件箭头点击事件,把其子集显示或隐藏.
+ */
+function groupToggle(event) {
+    event.stopPropagation();
+    if (status === 'dialog-new-action') {
+        let toggleTriangle = $(this);
+        let foldIcon       = toggleTriangle.parent().find('.cmpType');
+        let childCmp       = toggleTriangle.parent().parent().children('.cmp');
+        if (toggleTriangle.attr('class') === 'group-logo fa fa-caret-right') {
+            foldIcon.removeClass('fa-folder');
+            foldIcon.addClass('fa-folder-open');
+            childCmp.removeClass('hidden');
+            toggleTriangle.removeClass('fa-caret-right');
+            toggleTriangle.addClass('fa-caret-down')
+        } else if (toggleTriangle.attr('class') === 'group-logo fa fa-caret-down') {
+            foldIcon.addClass('fa-folder');
+            foldIcon.removeClass('fa-folder-open');
+            childCmp.addClass('hidden');
+            toggleTriangle.addClass('fa-caret-right');
+            toggleTriangle.removeClass('fa-caret-down')
+        }
+    }
+}
+
+/**
+ *组件列表中组件被选中时,修改样式.并初始化dialog输入框数据.
+ */
+function selectTarget() {
+    if (status === 'dialog-new-action') {
+        $('.cmp-active').removeClass('cmp-active');
+        $(this).addClass('cmp-active');
+        initPageData($(this).attr('data-id'));
+        let name = $('.cmp-active').text();
+        $('.action-cmp-label').html('添加动作的组件 : ' + name);
+    }
+}
+
+/**
+ * 1.初始化dialog模板数据,2.根据组件id对应的数据更改模板数据,3.将模板数据组装.
+ *
+ * @param id 选中组件的uuid
+ */
+function initPageData(id) {
+    $next.removeClass('refuse');
+    let actionTemplateData = {
+        from    : {
+            position: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            rotation: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            scale   : {
+                x: 1,
+                y: 1,
+                z: 1
+            },
+            opacity : 1
+        },
+        to      : {
+            position: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            rotation: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            scale   : {
+                x: 1,
+                y: 1,
+                z: 1
+            },
+            opacity : 1
+        },
+        delay   : 0,
+        duration: 1000,
+        easing  : 'Sinusoidal.InOut',
+        inherit : checkValue
+    };
+    addPageData(actionTemplateData, id);
+    pageDataFactory(actionTemplateData);
+}
+
+/**
+ * 根据组件之前action数据或场景数据，更改模板数据。
+ *
+ * @param templateData 模板数据
+ * @param id 组件uuid
+ */
+function addPageData(templateData, id) {
+
+    let selectedAction  = ApplicationSettings.getSelectedAction();
+    let selectedCommand = ApplicationSettings.getSelectedCommand();
+    let commands        = ProjectStructure.getCommands();
+    let prevAction      = findPreAction(commands, selectedCommand, selectedAction, id);
+    if (prevAction) {
+        if (prevAction.to.position) {
+            templateData.to.position = prevAction.to.position;
+        }
+        if (prevAction.to.rotation) {
+            templateData.to.rotation = prevAction.to.rotation;
+        }
+        if (prevAction.to.scale) {
+            templateData.to.scale = prevAction.to.scale;
+        }
+        if (prevAction.from.position) {
+            templateData.from.position = prevAction.from.position;
+        }
+        if (prevAction.from.rotation) {
+            templateData.from.rotation = prevAction.from.rotation;
+        }
+        if (prevAction.from.scale) {
+            templateData.from.scale = prevAction.from.scale;
+        }
+        if (prevAction.delay) {
+            templateData.delay = prevAction.delay;
+        }
+        if (prevAction.duration) {
+            templateData.duration = prevAction.duration;
+        }
+        if (prevAction.easing) {
+            templateData.easing = prevAction.easing;
+        }
+    } else {
+        let sceneTarget          = ProjectStructure.getObject(id);
+        templateData.to.position = sceneTarget.position;
+        templateData.to.rotation = sceneTarget.rotation;
+        templateData.to.scale    = sceneTarget.scale;
+    }
+}
+
+/**
+ * 根据模板数据组装dialog输入框的值，创建新action时from和to公用一个值。
+ *
+ * @param templateData 模板数据
+ */
+function pageDataFactory(templateData) {
+    if (status === 'dialog-new-action') {
+        $('#fromPositionX,#toPositionX').val(templateData.to.position.x);
+        $('#fromPositionY,#toPositionY').val(templateData.to.position.y);
+        $('#fromPositionZ,#toPositionZ').val(templateData.to.position.z);
+        $('#fromRotationX,#toRotationX').val(templateData.to.rotation.x);
+        $('#fromRotationY,#toRotationY').val(templateData.to.rotation.y);
+        $('#fromRotationZ,#toRotationZ').val(templateData.to.rotation.z);
+        $('#fromScaleX,#toScaleX').val(templateData.to.scale.x);
+        $('#fromScaleY,#toScaleY').val(templateData.to.scale.y);
+        $('#fromScaleZ,#toScaleZ').val(templateData.to.scale.z);
+        $('#fromOpacity,#toOpacity').val(templateData.to.opacity);
+        $('#actionDuration').val(1000);
+        $('#actionDelay').val(0);
+    } else if (status === 'dialog-update-action') {
+        $('#fromPositionX').val(templateData.from.position.x);
+        $('#fromPositionY').val(templateData.from.position.y);
+        $('#fromPositionZ').val(templateData.from.position.z);
+        $('#fromRotationX').val(templateData.from.rotation.x);
+        $('#fromRotationY').val(templateData.from.rotation.y);
+        $('#fromRotationZ').val(templateData.from.rotation.z);
+        $('#fromScaleX').val(templateData.from.scale.x);
+        $('#fromScaleY').val(templateData.from.scale.y);
+        $('#fromScaleZ').val(templateData.from.scale.z);
+        $('#fromOpacity').val(templateData.from.opacity);
+
+        $('#toPositionX').val(templateData.to.position.x);
+        $('#toPositionY').val(templateData.to.position.y);
+        $('#toPositionZ').val(templateData.to.position.z);
+        $('#toRotationX').val(templateData.to.rotation.x);
+        $('#toRotationY').val(templateData.to.rotation.y);
+        $('#toRotationZ').val(templateData.to.rotation.z);
+        $('#toScaleX').val(templateData.to.scale.x);
+        $('#toScaleY').val(templateData.to.scale.y);
+        $('#toScaleZ').val(templateData.to.scale.z);
+        $('#toOpacity').val(templateData.to.opacity);
+
+        $('#actionDuration').val(templateData.duration);
+        $('#actionDelay').val(templateData.delay);
+    }
+
+}
+
+/**
+ * 查找组件之前是否存在action数据
+ *
+ * @param commands 所有command数据
+ * @param cmdIndex 选中的action所在command的位置
+ * @param actIndex 选中的action所在command的action位置
+ * @param cmpId 选中组件uuid
+ * @returns 返回新建的action之前同一个组件的最后一个action对象
+ */
+function findPreAction(commands, cmdIndex, actIndex, cmpId) {
+    let beforeAction = [];
+    for (let i = 0; i < cmdIndex + 1; i++) {
+        if (i == cmdIndex) {
+            for (let m = 0; m <= actIndex; m++) {
+                if (commands[i].actions[m].target == cmpId) {
+                    beforeAction.push(commands[i].actions[m]);
+                }
+            }
+        } else {
+            commands[i].actions.forEach(function (child) {
+                if (child.target == cmpId) {
+                    beforeAction.push(child);
+                }
+            });
+        }
+    }
+    return beforeAction[beforeAction.length - 1];
+}
+
+/**
+ * from属性输入框只读或可写状态切换
+ */
+function readOnly() {
+    if ($check[0].checked) {
+        checkValue = false;
+        $fromInput.removeAttr('readonly');
+        $fromInput.removeClass('readonly');
+    } else {
+        checkValue = true;
+        $fromInput.attr('readonly', 'true');
+        $fromInput.addClass('readonly');
+    }
+}
+
+/**
+ * easing列表选中事件
+ */
+function selectEasingList() {
+    $('.easing-img-active').removeClass('easing-img-active');
+    $(this).addClass('easing-img-active');
+}
+
+/**
+ *
+ * @returns 创建的action对象
+ */
+function createAction() {
+    let action             = {
+        target  : '',
+        from    : {
+            position: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            rotation: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            scale   : {
+                x: 1,
+                y: 1,
+                z: 1
+            },
+            opacity : 1
+        },
+        to      : {
+            position: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            rotation: {
+                x: 0,
+                y: 0,
+                z: 0
+            },
+            scale   : {
+                x: 1,
+                y: 1,
+                z: 1
+            },
+            opacity : 1
+        },
+        delay   : 0,
+        duration: 1000,
+        easing  : 'Sinusoidal.InOut',
+        inherit : checkValue
+    };
+    action.target          = $('.cmp-active').attr('data-id');
+    action.from.position.x = $('#fromPositionX').val();
+    action.from.position.y = $('#fromPositionY').val();
+    action.from.position.z = $('#fromPositionZ').val();
+    action.from.rotation.x = $('#fromRotationX').val();
+    action.from.rotation.y = $('#fromRotationY').val();
+    action.from.rotation.z = $('#fromRotationZ').val();
+    action.from.scale.x    = $('#fromScaleX').val();
+    action.from.scale.y    = $('#fromScaleY').val();
+    action.from.scale.z    = $('#fromScaleZ').val();
+    action.from.opacity    = $('#fromOpacity').val();
+
+    action.to.position.x = $('#toPositionX').val();
+    action.to.position.y = $('#toPositionY').val();
+    action.to.position.z = $('#toPositionZ').val();
+    action.to.rotation.x = $('#toRotationX').val();
+    action.to.rotation.y = $('#toRotationY').val();
+    action.to.rotation.z = $('#toRotationZ').val();
+    action.to.scale.x    = $('#toScaleX').val();
+    action.to.scale.y    = $('#toScaleY').val();
+    action.to.scale.z    = $('#toScaleZ').val();
+    action.to.opacity    = $('#toOpacity').val();
+
+    action.duration = $('#actionDuration').val();
+    action.delay    = $('#actionDelay').val();
+    action.easing   = $('.easing-img-active').attr('alt');
+
+    return action;
+}
+
+/**
+ * 对话框下一步按及完成按钮创建action
+ */
+function toNext() {
+    let nowStep  = $('.step.step-now');
+    let nowOrder = $step.index(nowStep);
+    if (nowOrder < 2) {
+        if (nowOrder == 0) {
+            cmpListChecked(nowStep, nowOrder);
+        } else if (nowOrder == 1) {
+            valueChecked(nowStep, nowOrder);
+        }
+    }
+    else if (nowOrder == 2) {
+        toSubmit();
+    }
+}
+
+/**
+ * 检查组件列表是否有组件选中，选中才可进入下一步操作
+ *
+ * @param nowStep 当前步骤dom节点
+ * @param nowOrder 当前第几步 (0-2)
+ */
+function cmpListChecked(nowStep, nowOrder) {
+    let $cmpActive = $cmpList.find('.cmp-active');
+    if ($cmpActive.length != 0) {
+        $prev.removeClass('refuse');
+        nowStep.removeClass('step-now');
+        changeOrder("toNext", nowOrder);
+        document.getElementById('toPositionX').focus();
+    }
+}
+
+/**
+ * 检查透明度是否符合要求，符合才可进入下一步操作
+ *
+ * @param nowStep 当前步骤dom节点
+ * @param nowOrder 当前第几步 (0-2)
+ */
+function valueChecked(nowStep, nowOrder) {
+    let $opacity = $('.attribute-value.opacity');
+    let canNext  = true;
+    for (let i = 0; i < $opacity.length; i++) {
+        if ($opacity.eq(i).val() < 0 || $opacity.eq(i).val() > 1) {
+            canNext = false;
+            $opacity.eq(i).parent().find('.opacity-notice').addClass('show');
+        }
+    }
+    if (canNext) {
+        $('.opacity-notice.show').removeClass('show');
+        $next.html('完成');
+        $next.addClass('submit');
+        nowStep.removeClass('step-now');
+        changeOrder("toNext", nowOrder);
+    }
+}
+
+/**
+ * 完成按钮额
+ */
+function toSubmit() {
+    let $timeInput = $('.step-effect .attribute-value');
+    let canSubmit  = true;
+    for (let i = 0; i < $timeInput.length; i++) {
+        if ($timeInput.eq(i).val() < 0) {
+            canSubmit = false;
+            $timeInput.eq(i).parent().find('.time-notice').addClass('show');
+        }
+    }
+    if (canSubmit) {
+        $('.time-notice').removeClass('show');
+        if (status === 'dialog-new-action') {
+            let newAction = createAction();
+            CommandManager.execute(Commands.ANIME_EDIT_CREATE_ACTION, newAction);
+        } else if (status === 'dialog-update-action') {
+            let afterAction = createAction();
+            let params      = {
+                id   : updateAction.id,
+                after: afterAction
+            };
+            CommandManager.execute(Commands.ANIME_EDIT_ATTRIBUTE_CHANGE, params);
+        }
+        OpenActionDialog.close();
+    }
+}
+
+/**
+ *
+ * 对话框上一步
+ */
+function toPrev() {
+    let nowStep  = $('.step.step-now');
+    let nowOrder = $step.index(nowStep);
+    if (nowOrder > 0) {
+        nowStep.removeClass('step-now');
+        changeOrder('toPrev', nowOrder);
+        // 如果当前在第三页，返回上一步时，将按钮内容完成改为下一步
+        if (nowOrder == 2) {
+            $next.html('下一步');
+            $next.removeClass('submit');
+            document.getElementById('toPositionX').focus();
+        }
+        if (nowOrder == 1) {
+            $prev.addClass('refuse');
+        }
+    }
+}
+
+/**
+ * 步骤切换，样式改变。
+ *
+ * @param nowOrder 当前步骤
+ */
+function changeOrder(direction, nowOrder) {
+    if (direction === "toNext") {
+        let stepOrder       = $step[nowOrder].querySelector(".step-order");
+        stepOrder.innerHTML = " ";
+        $(stepOrder).addClass("fa fa-check step-order-ok");
+        $step.eq(nowOrder + 1).addClass('step-now');
+    } else {
+        let stepOrder       = $step[nowOrder - 1].querySelector(".step-order");
+        stepOrder.innerHTML = nowOrder;
+        $(stepOrder).removeClass("fa fa-check step-order-ok");
+        $step.eq(nowOrder - 1).addClass('step-now');
+    }
+}
+
+/**
+ * easing列表向左移动
+ */
+function easingMoveLeft() {
+    if (easingPage < -1) {
+        easingPage++;
+        let left = ((easingPage) * 387) + "px";
+        $easingGroup.css('left', left);
+        $easingBtnLeft.removeClass('no-click');
+        $easingBtnRight.removeClass('no-click');
+    } else if (easingPage == -1) {
+        easingPage++;
+        let left = ((easingPage) * 387) + "px";
+        $easingGroup.css('left', left);
+        $easingBtnLeft.addClass('no-click');
+    }
+}
+
+/**
+ * easing列表向右移动
+ */
+function easingMoveRight() {
+    if (easingPage > -9) {
+        easingPage--;
+        let right = ((easingPage) * 387) + "px";
+        $easingGroup.css('left', right);
+        $easingBtnRight.removeClass('no-click');
+        $easingBtnLeft.removeClass('no-click');
+    } else if (easingPage == -9) {
+        easingPage--;
+        let right = ((easingPage) * 387) + "px";
+        $easingGroup.css('left', right);
+        $easingBtnRight.addClass('no-click');
+    }
+}
+
+/**
+ * 初始化easing图片
+ *
+ * @param page easing页码
+ * @param easing 默认选中的easing的dom节点
+ */
+function initEasingList(page, easing) {
+    $('.easing-img-active').removeClass('easing-img-active');
+    easingPage = -page;
+    easing.addClass('easing-img-active');
+    let pageleft = (-page * 387) + "px";
+    $easingGroup.css('left', pageleft);
+
+    $easingBtnLeft.removeClass('no-click');
+    $easingBtnRight.removeClass('no-click');
+    if (page === 0) {
+        $easingBtnLeft.addClass('no-click');
+        $easingBtnRight.removeClass('no-click');
+    } else if (page === 10) {
+        $easingBtnLeft.removeClass('no-click');
+        $easingBtnRight.addClass('no-click');
+    }
+}
+
+function template(model) {
+    return TemplateUtils.template(Template)(model);
+}
